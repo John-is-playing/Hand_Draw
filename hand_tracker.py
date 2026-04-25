@@ -5,12 +5,21 @@ import cv2
 
 # 尝试不同的 MediaPipe 导入方式
 try:
+    # 最新版本 MediaPipe
     import mediapipe as mp
+    from mediapipe.tasks import vision
     from mediapipe import solutions
+    from mediapipe.python.solutions import hands
 except ImportError:
-    # 兼容旧版本 MediaPipe
-    import mediapipe as mp
-    solutions = mp
+    try:
+        # 旧版本 MediaPipe
+        import mediapipe as mp
+        from mediapipe import solutions
+        from mediapipe.solutions import hands
+    except ImportError:
+        # 更旧版本 MediaPipe
+        import mediapipe as mp
+        hands = mp.solutions.hands
 
 @dataclass
 class HandState:
@@ -26,8 +35,7 @@ class HandTracker:
         - max_hands: 最多检测的手数，默认 1（MVP 只需单手）
         - min_detection_confidence: 检测置信度阈值
         """
-        self.mp_hands = solutions.hands
-        self.hands = self.mp_hands.Hands(
+        self.hands = hands.Hands(
             max_num_hands=max_hands,
             min_detection_confidence=min_detection_confidence
         )
