@@ -93,3 +93,7 @@ class Renderer:
             if keys[key]:
                 return key
         return None
+
+    def release(self) -> None:
+        """释放 Pygame 资源。"""
+        pygame.quit()
