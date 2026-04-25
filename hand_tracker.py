@@ -3,23 +3,28 @@ from typing import Optional
 import numpy as np
 import cv2
 
-# 尝试不同的 MediaPipe 导入方式
+# 尝试导入 MediaPipe
 try:
-    # 最新版本 MediaPipe
     import mediapipe as mp
-    from mediapipe.tasks import vision
-    from mediapipe import solutions
-    from mediapipe.python.solutions import hands
-except ImportError:
+    
+    # 尝试不同的导入方式
     try:
-        # 旧版本 MediaPipe
-        import mediapipe as mp
-        from mediapipe import solutions
+        # 现代版本 MediaPipe
         from mediapipe.solutions import hands
     except ImportError:
-        # 更旧版本 MediaPipe
-        import mediapipe as mp
-        hands = mp.solutions.hands
+        try:
+            # 较旧版本 MediaPipe
+            from mediapipe import hands
+        except ImportError:
+            # 非常旧的版本 MediaPipe
+            hands = mp.hands
+except ImportError:
+    # MediaPipe 未安装
+    raise ImportError("MediaPipe 未安装或版本不兼容。请运行: pip install mediapipe --upgrade")
+
+except AttributeError:
+    # MediaPipe 版本太旧
+    raise ImportError("MediaPipe 版本太旧。请运行: pip install mediapipe --upgrade")
 
 @dataclass
 class HandState:
