@@ -1,8 +1,16 @@
 from dataclasses import dataclass
 from typing import Optional
 import numpy as np
-import mediapipe as mp
 import cv2
+
+# 尝试不同的 MediaPipe 导入方式
+try:
+    import mediapipe as mp
+    from mediapipe import solutions
+except ImportError:
+    # 兼容旧版本 MediaPipe
+    import mediapipe as mp
+    solutions = mp
 
 @dataclass
 class HandState:
@@ -18,7 +26,7 @@ class HandTracker:
         - max_hands: 最多检测的手数，默认 1（MVP 只需单手）
         - min_detection_confidence: 检测置信度阈值
         """
-        self.mp_hands = mp.solutions.hands
+        self.mp_hands = solutions.hands
         self.hands = self.mp_hands.Hands(
             max_num_hands=max_hands,
             min_detection_confidence=min_detection_confidence
