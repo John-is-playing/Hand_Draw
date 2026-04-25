@@ -44,12 +44,10 @@ class NeonBrush(BaseBrush):
             # 绘制外发光层
             outer_surface = pygame.Surface(self.canvas.get_size(), pygame.SRCALPHA)
             # 外发光层使用较低的透明度
-            glow_color = color.copy()
-            glow_color.a = 100
+            glow_color = pygame.Color(color.r, color.g, color.b, 100)
             pygame.draw.line(outer_surface, glow_color, self.trail[i], self.trail[i+1], 12)
             self.canvas.blit(outer_surface, (0, 0))
             
             # 绘制核心线条
-            core_color = color.copy()
-            core_color.a = alpha
+            core_color = pygame.Color(color.r, color.g, color.b, alpha)
             pygame.draw.line(self.canvas, core_color, self.trail[i], self.trail[i+1], 4)
