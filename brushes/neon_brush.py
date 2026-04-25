@@ -39,7 +39,7 @@ class NeonBrush(BaseBrush):
             
             # 计算当前点的颜色
             color = pygame.Color(0)
-            color.hsva = (self.color_hue, 100, 100, 255)  # 基础颜色不透明
+            color.hsva = (self.color_hue, 100, 100, 100)  # 基础颜色不透明（A 值范围 0-100）
             
             # 绘制外发光层
             outer_surface = pygame.Surface(self.canvas.get_size(), pygame.SRCALPHA)

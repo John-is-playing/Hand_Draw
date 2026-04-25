@@ -30,7 +30,10 @@ class RainbowBrush(BaseBrush):
         
         # 绘制外层半透明线条，增加柔和感
         outer_surface = pygame.Surface(self.canvas.get_size(), pygame.SRCALPHA)
-        pygame.draw.line(outer_surface, color + (100,), from_pos, to_pos, self.line_width + 4)
+        # 创建半透明版本的颜色
+        outer_color = color.copy()
+        outer_color.a = 100
+        pygame.draw.line(outer_surface, outer_color, from_pos, to_pos, self.line_width + 4)
         self.canvas.blit(outer_surface, (0, 0))
         
         # 绘制内层线条
