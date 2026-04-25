@@ -25,7 +25,16 @@ class HandTracker:
         self.model_path = self._download_model()
         
         # 加载手部骨骼点检测模型
-        self.net = cv2.dnn.readNetFromTensorflow(self.model_path)
+        if hasattr(self, 'use_caffe_model') and self.use_caffe_model:
+            # 使用 Caffe 模型
+            self.net = cv2.dnn.readNetFromCaffe(self.prototxt_path, self.caffemodel_path)
+        else:
+            # 使用 TensorFlow 模型
+            points_path = os.path.join("models", "hand_landmark.pbtxt")
+            if os.path.exists(points_path):
+                self.net = cv2.dnn.readNetFromTensorflow(self.model_path, points_path)
+            else:
+                self.net = cv2.dnn.readNetFromTensorflow(self.model_path)
         
         # 手部关键点连接
         self.hand_connections = [
@@ -46,22 +55,39 @@ class HandTracker:
         
         # 检查模型是否存在
         if not (os.path.exists(model_path) and os.path.exists(points_path)):
-            print("\n=== 手部骨骼识别模型下载说明 ===")
-            print("1. 下载手部骨骼识别模型文件：")
-            print("   - 模型文件: hand_landmark.pb")
-            print("   - 配置文件: hand_landmark.pbtxt")
-            print("2. 下载地址：")
-            print("   https://github.com/CMU-Perceptual-Computing-Lab/openpose/tree/master/models/hand")
-            print("   或使用其他公开的手部骨骼点检测模型")
-            print("3. 放置位置：")
-            print(f"   将下载的文件放在 {model_dir} 目录下")
-            print("4. 重新运行程序")
-            print("==============================\n")
+            # 检查是否存在其他格式的模型文件
+            prototxt_path = os.path.join(model_dir, "pose_deploy.prototxt")
+            caffemodel_path = os.path.join(model_dir, "pose_iter_102000.caffemodel")
             
-            # 使用简化的实现
-            self.use_simplified = True
+            if os.path.exists(prototxt_path) and os.path.exists(caffemodel_path):
+                # 使用 Caffe 模型
+                self.use_caffe_model = True
+                self.prototxt_path = prototxt_path
+                self.caffemodel_path = caffemodel_path
+                self.use_simplified = False
+            else:
+                print("\n=== 手部骨骼识别模型下载说明 ===")
+                print("1. 下载手部骨骼识别模型文件：")
+                print("   选项 1 (TensorFlow 格式):")
+                print("   - 模型文件: hand_landmark.pb")
+                print("   - 配置文件: hand_landmark.pbtxt")
+                print("   选项 2 (Caffe 格式 - OpenPose):")
+                print("   - 配置文件: pose_deploy.prototxt")
+                print("   - 模型文件: pose_iter_102000.caffemodel")
+                print("2. 下载地址：")
+                print("   TensorFlow 模型: https://github.com/google/mediapipe/tree/master/mediapipe/models")
+                print("   Caffe 模型 (OpenPose): https://github.com/CMU-Perceptual-Computing-Lab/openpose/releases")
+                print("3. 放置位置：")
+                print(f"   将下载的文件放在 {model_dir} 目录下")
+                print("4. 重新运行程序")
+                print("==============================\n")
+                
+                # 使用简化的实现
+                self.use_simplified = True
+                self.use_caffe_model = False
         else:
             self.use_simplified = False
+            self.use_caffe_model = False
         
         return model_path
 
@@ -88,52 +114,78 @@ class HandTracker:
     def _process_with_dnn(self, frame: np.ndarray, processed_frame: np.ndarray, h: int, w: int) -> tuple[HandState, np.ndarray]:
         """使用 DNN 模型进行手部骨骼识别"""
         # 预处理图像
-        blob = cv2.dnn.blobFromImage(frame, 1.0, (256, 256), (0, 0, 0), swapRB=False, crop=False)
+        if hasattr(self, 'use_caffe_model') and self.use_caffe_model:
+            # Caffe 模型（OpenPose）的输入尺寸
+            blob = cv2.dnn.blobFromImage(frame, 1.0 / 255, (368, 368), (0, 0, 0), swapRB=False, crop=False)
+        else:
+            # TensorFlow 模型的输入尺寸
+            blob = cv2.dnn.blobFromImage(frame, 1.0, (256, 256), (0, 0, 0), swapRB=False, crop=False)
+        
         self.net.setInput(blob)
         
         # 前向推理
         results = self.net.forward()
         
         # 解析结果
-        # 假设模型输出形状为 [1, 21, 3]，其中 21 是关键点数量，3 是 (x, y, z)
-        if results.shape[1] >= 21:
-            landmarks = []
-            for i in range(21):
-                x = int(results[0, i, 0] * w)
-                y = int(results[0, i, 1] * h)
-                z = results[0, i, 2]
-                landmarks.append((x, y, z))
+        landmarks = []
+        
+        if hasattr(self, 'use_caffe_model') and self.use_caffe_model:
+            # 处理 Caffe 模型（OpenPose）的输出
+            # OpenPose 手部模型输出形状为 [1, 22, h, w]，其中 22 是关键点数量
+            if results.shape[1] >= 22:
+                # 对每个关键点热力图找到最大值的位置
+                for i in range(21):  # 使用前 21 个关键点
+                    heatmap = results[0, i, :, :]
+                    min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(heatmap)
+                    
+                    # 检查置信度
+                    if max_val > 0.1:
+                        # 映射回原始图像坐标
+                        x = int(max_loc[0] * w / results.shape[3])
+                        y = int(max_loc[1] * h / results.shape[2])
+                        landmarks.append((x, y, 0.0))
+        else:
+            # 处理 TensorFlow 模型的输出
+            # 假设模型输出形状为 [1, 21, 3]，其中 21 是关键点数量，3 是 (x, y, z)
+            if results.shape[1] >= 21:
+                for i in range(21):
+                    x = int(results[0, i, 0] * w)
+                    y = int(results[0, i, 1] * h)
+                    z = results[0, i, 2]
+                    landmarks.append((x, y, z))
+        
+        # 检查是否检测到足够的关键点
+        if len(landmarks) >= 9:  # 至少需要 9 个关键点（包括食指指尖）
+            # 食指指尖是第 8 个关键点（索引从 0 开始）
+            index_finger_tip = landmarks[8]
+            norm_x = index_finger_tip[0] / w
+            norm_y = index_finger_tip[1] / h
             
-            # 检查置信度（这里简化处理，假设模型输出的坐标都是有效的）
-            if landmarks:
-                # 食指指尖是第 8 个关键点（索引从 0 开始）
-                index_finger_tip = landmarks[8]
-                norm_x = index_finger_tip[0] / w
-                norm_y = index_finger_tip[1] / h
-                
-                # 绘制手部骨骼
-                for connection in self.hand_connections:
-                    start = landmarks[connection[0]]
-                    end = landmarks[connection[1]]
+            # 绘制手部骨骼
+            for connection in self.hand_connections:
+                start_idx, end_idx = connection
+                if start_idx < len(landmarks) and end_idx < len(landmarks):
+                    start = landmarks[start_idx]
+                    end = landmarks[end_idx]
                     cv2.line(processed_frame, (start[0], start[1]), (end[0], end[1]), (0, 255, 0), 2)
-                
-                # 绘制关键点
-                for i, landmark in enumerate(landmarks):
-                    color = (0, 0, 255) if i == 8 else (255, 0, 0)
-                    cv2.circle(processed_frame, (landmark[0], landmark[1]), 5, color, -1)
-                    cv2.putText(processed_frame, str(i), (landmark[0] + 10, landmark[1]), 
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-                
-                # 归一化所有关键点
-                norm_landmarks = []
-                for landmark in landmarks:
-                    norm_landmarks.append((landmark[0]/w, landmark[1]/h, landmark[2]))
-                
-                return HandState(
-                    index_finger_tip=(norm_x, norm_y),
-                    is_detected=True,
-                    all_landmarks=norm_landmarks
-                ), processed_frame
+            
+            # 绘制关键点
+            for i, landmark in enumerate(landmarks):
+                color = (0, 0, 255) if i == 8 else (255, 0, 0)
+                cv2.circle(processed_frame, (landmark[0], landmark[1]), 5, color, -1)
+                cv2.putText(processed_frame, str(i), (landmark[0] + 10, landmark[1]), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            
+            # 归一化所有关键点
+            norm_landmarks = []
+            for landmark in landmarks:
+                norm_landmarks.append((landmark[0]/w, landmark[1]/h, landmark[2]))
+            
+            return HandState(
+                index_finger_tip=(norm_x, norm_y),
+                is_detected=True,
+                all_landmarks=norm_landmarks
+            ), processed_frame
         
         # 未检测到手
         return HandState(
