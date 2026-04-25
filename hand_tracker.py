@@ -3,29 +3,6 @@ from typing import Optional
 import numpy as np
 import cv2
 
-# 尝试导入 MediaPipe
-try:
-    import mediapipe as mp
-    
-    # 尝试不同的导入方式
-    try:
-        # 现代版本 MediaPipe
-        from mediapipe.solutions import hands
-    except ImportError:
-        try:
-            # 较旧版本 MediaPipe
-            from mediapipe import hands
-        except ImportError:
-            # 非常旧的版本 MediaPipe
-            hands = mp.hands
-except ImportError:
-    # MediaPipe 未安装
-    raise ImportError("MediaPipe 未安装或版本不兼容。请运行: pip install mediapipe --upgrade")
-
-except AttributeError:
-    # MediaPipe 版本太旧
-    raise ImportError("MediaPipe 版本太旧。请运行: pip install mediapipe --upgrade")
-
 @dataclass
 class HandState:
     """手部状态数据结构"""
@@ -36,14 +13,16 @@ class HandState:
 class HandTracker:
     def __init__(self, max_hands: int = 1, min_detection_confidence: float = 0.7):
         """
-        初始化 MediaPipe Hands。
+        初始化手部检测器（使用 OpenCV 颜色追踪）。
         - max_hands: 最多检测的手数，默认 1（MVP 只需单手）
         - min_detection_confidence: 检测置信度阈值
         """
-        self.hands = hands.Hands(
-            max_num_hands=max_hands,
-            min_detection_confidence=min_detection_confidence
-        )
+        self.max_hands = max_hands
+        self.min_detection_confidence = min_detection_confidence
+        
+        # 定义皮肤颜色范围（HSV）
+        self.lower_skin = np.array([0, 20, 70], dtype=np.uint8)
+        self.upper_skin = np.array([20, 255, 255], dtype=np.uint8)
 
     def process(self, frame: np.ndarray) -> HandState:
         """
@@ -51,40 +30,64 @@ class HandTracker:
         - frame: BGR 格式图像
         - 返回: HandState，包含食指指尖坐标和检测状态
         """
-        # 转换为 RGB 格式（MediaPipe 要求）
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        # 转换为 HSV 颜色空间
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         
-        # 处理图像
-        results = self.hands.process(rgb_frame)
+        # 提取皮肤颜色区域
+        mask = cv2.inRange(hsv, self.lower_skin, self.upper_skin)
         
-        if results.multi_hand_landmarks:
-            # 取第一只手
-            hand_landmarks = results.multi_hand_landmarks[0]
+        # 形态学操作，去除噪声
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
+        
+        # 查找轮廓
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        if contours:
+            # 找到最大的轮廓（假设是手）
+            max_contour = max(contours, key=cv2.contourArea)
             
-            # 提取食指指尖（索引为8）
-            index_finger_tip = hand_landmarks.landmark[8]
-            tip_coords = (index_finger_tip.x, index_finger_tip.y)
+            # 计算轮廓面积
+            area = cv2.contourArea(max_contour)
             
-            # 提取所有关键点
-            all_landmarks = []
-            for landmark in hand_landmarks.landmark:
-                all_landmarks.append((landmark.x, landmark.y, landmark.z))
+            # 如果面积太小，不认为是手
+            if area < 5000:
+                return HandState(
+                    index_finger_tip=(0, 0),
+                    is_detected=False,
+                    all_landmarks=[]
+                )
             
-            return HandState(
-                index_finger_tip=tip_coords,
-                is_detected=True,
-                all_landmarks=all_landmarks
-            )
-        else:
-            # 未检测到手
-            return HandState(
-                index_finger_tip=(0, 0),
-                is_detected=False,
-                all_landmarks=[]
-            )
+            # 找到轮廓的凸包
+            hull = cv2.convexHull(max_contour)
+            
+            # 找到最高点（假设是食指指尖）
+            # 按 y 坐标排序，最小的点就是最高点
+            hull_points = hull.reshape(-1, 2)
+            if len(hull_points) > 0:
+                # 找到最高点（y 坐标最小）
+                highest_point = hull_points[np.argmin(hull_points[:, 1])]
+                
+                # 归一化坐标
+                h, w = frame.shape[:2]
+                norm_x = highest_point[0] / w
+                norm_y = highest_point[1] / h
+                
+                return HandState(
+                    index_finger_tip=(norm_x, norm_y),
+                    is_detected=True,
+                    all_landmarks=[(norm_x, norm_y, 0.0)]  # 简化处理，只返回指尖点
+                )
+        
+        # 未检测到手
+        return HandState(
+            index_finger_tip=(0, 0),
+            is_detected=False,
+            all_landmarks=[]
+        )
 
     def release(self) -> None:
-        """释放 MediaPipe 资源。"""
-        self.hands.close()
+        """释放资源。"""
+        pass
 
 
