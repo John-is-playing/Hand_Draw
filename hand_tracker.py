@@ -27,7 +27,7 @@ class HandTracker:
     def process(self, frame: np.ndarray) -> tuple[HandState, np.ndarray]:
         """
         处理一帧图像，返回手部状态和处理后的帧。
-        - frame: BGR 格式图像
+        - frame: BGR 格式图像（已镜像）
         - 返回: (HandState, 处理后的帧)，HandState 包含食指指尖坐标和检测状态
         """
         # 复制帧以避免修改原始图像
