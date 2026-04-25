@@ -24,12 +24,15 @@ class HandTracker:
         self.lower_skin = np.array([0, 20, 70], dtype=np.uint8)
         self.upper_skin = np.array([20, 255, 255], dtype=np.uint8)
 
-    def process(self, frame: np.ndarray) -> HandState:
+    def process(self, frame: np.ndarray) -> tuple[HandState, np.ndarray]:
         """
-        处理一帧图像，返回手部状态。
+        处理一帧图像，返回手部状态和处理后的帧。
         - frame: BGR 格式图像
-        - 返回: HandState，包含食指指尖坐标和检测状态
+        - 返回: (HandState, 处理后的帧)，HandState 包含食指指尖坐标和检测状态
         """
+        # 复制帧以避免修改原始图像
+        processed_frame = frame.copy()
+        
         # 转换为 HSV 颜色空间
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         
@@ -56,7 +59,7 @@ class HandTracker:
                     index_finger_tip=(0, 0),
                     is_detected=False,
                     all_landmarks=[]
-                )
+                ), processed_frame
             
             # 找到轮廓的凸包
             hull = cv2.convexHull(max_contour)
@@ -73,18 +76,23 @@ class HandTracker:
                 norm_x = highest_point[0] / w
                 norm_y = highest_point[1] / h
                 
+                # 在处理后的帧上绘制手部轮廓和指尖
+                cv2.drawContours(processed_frame, [max_contour], -1, (0, 255, 0), 2)
+                cv2.drawContours(processed_frame, [hull], -1, (0, 0, 255), 2)
+                cv2.circle(processed_frame, tuple(highest_point), 10, (255, 0, 0), -1)
+                
                 return HandState(
                     index_finger_tip=(norm_x, norm_y),
                     is_detected=True,
                     all_landmarks=[(norm_x, norm_y, 0.0)]  # 简化处理，只返回指尖点
-                )
+                ), processed_frame
         
         # 未检测到手
         return HandState(
             index_finger_tip=(0, 0),
             is_detected=False,
             all_landmarks=[]
-        )
+        ), processed_frame
 
     def release(self) -> None:
         """释放资源。"""

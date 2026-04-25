@@ -66,7 +66,7 @@ def main():
             continue
         
         # 处理手势识别
-        hand_state = hand_tracker.process(frame)
+        hand_state, processed_frame = hand_tracker.process(frame)
         
         # 映射坐标
         if hand_state.is_detected:
@@ -104,8 +104,8 @@ def main():
         # 绘制 UI
         renderer.draw_ui(brush_name, fps)
         
-        # 刷新显示
-        renderer.flip()
+        # 刷新显示（传入处理后的摄像头帧以显示画中画）
+        renderer.flip(camera_frame=processed_frame)
     
     # 清理流程
     camera.release()

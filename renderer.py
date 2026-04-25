@@ -1,4 +1,5 @@
 import pygame
+import cv2
 
 class Renderer:
     def __init__(self, width: int = 1280, height: int = 720):
@@ -50,10 +51,25 @@ class Renderer:
         hint_rect.center = (self.width // 2, self.height - 30)
         self.screen.blit(hint_text, hint_rect)
 
-    def flip(self) -> None:
-        """刷新显示。"""
+    def flip(self, camera_frame: None = None) -> None:
+        """刷新显示。
+        - camera_frame: 摄像头帧（可选），如果提供则显示在左上角
+        """
         # 将画布内容绘制到屏幕
         self.screen.blit(self.canvas, (0, 0))
+        
+        # 如果提供了摄像头帧，显示在左上角
+        if camera_frame is not None:
+            # 将 OpenCV 帧转换为 Pygame 表面
+            # 转换颜色空间从 BGR 到 RGB
+            frame_rgb = cv2.cvtColor(camera_frame, cv2.COLOR_BGR2RGB)
+            # 调整大小为小窗口
+            frame_resized = cv2.resize(frame_rgb, (320, 240))
+            # 创建 Pygame 表面
+            frame_surface = pygame.surfarray.make_surface(frame_resized.swapaxes(0, 1))
+            # 绘制到屏幕左上角
+            self.screen.blit(frame_surface, (10, 10))
+        
         # 刷新显示
         pygame.display.flip()
 
