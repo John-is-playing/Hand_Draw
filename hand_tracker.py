@@ -42,13 +42,26 @@ class HandTracker:
         os.makedirs(model_dir, exist_ok=True)
         
         model_path = os.path.join(model_dir, "hand_landmark.pb")
+        points_path = os.path.join(model_dir, "hand_landmark.pbtxt")
         
         # 检查模型是否存在
-        if not os.path.exists(model_path):
-            # 这里使用一个公开的手部骨骼点检测模型
-            # 注意：实际使用时需要下载正确的模型文件
-            # 这里我们使用一个简化的实现，直接使用 OpenCV 的内置功能
-            pass
+        if not (os.path.exists(model_path) and os.path.exists(points_path)):
+            print("\n=== 手部骨骼识别模型下载说明 ===")
+            print("1. 下载手部骨骼识别模型文件：")
+            print("   - 模型文件: hand_landmark.pb")
+            print("   - 配置文件: hand_landmark.pbtxt")
+            print("2. 下载地址：")
+            print("   https://github.com/CMU-Perceptual-Computing-Lab/openpose/tree/master/models/hand")
+            print("   或使用其他公开的手部骨骼点检测模型")
+            print("3. 放置位置：")
+            print(f"   将下载的文件放在 {model_dir} 目录下")
+            print("4. 重新运行程序")
+            print("==============================\n")
+            
+            # 使用简化的实现
+            self.use_simplified = True
+        else:
+            self.use_simplified = False
         
         return model_path
 
@@ -62,7 +75,75 @@ class HandTracker:
         processed_frame = frame.copy()
         h, w = frame.shape[:2]
         
+        if not self.use_simplified:
+            try:
+                return self._process_with_dnn(frame, processed_frame, h, w)
+            except Exception as e:
+                print(f"DNN 模型处理失败，使用简化方法: {e}")
+                self.use_simplified = True
+        
         # 使用简化的方法：基于颜色和轮廓的手部检测
+        return self._process_with_simplified(frame, processed_frame, h, w)
+    
+    def _process_with_dnn(self, frame: np.ndarray, processed_frame: np.ndarray, h: int, w: int) -> tuple[HandState, np.ndarray]:
+        """使用 DNN 模型进行手部骨骼识别"""
+        # 预处理图像
+        blob = cv2.dnn.blobFromImage(frame, 1.0, (256, 256), (0, 0, 0), swapRB=False, crop=False)
+        self.net.setInput(blob)
+        
+        # 前向推理
+        results = self.net.forward()
+        
+        # 解析结果
+        # 假设模型输出形状为 [1, 21, 3]，其中 21 是关键点数量，3 是 (x, y, z)
+        if results.shape[1] >= 21:
+            landmarks = []
+            for i in range(21):
+                x = int(results[0, i, 0] * w)
+                y = int(results[0, i, 1] * h)
+                z = results[0, i, 2]
+                landmarks.append((x, y, z))
+            
+            # 检查置信度（这里简化处理，假设模型输出的坐标都是有效的）
+            if landmarks:
+                # 食指指尖是第 8 个关键点（索引从 0 开始）
+                index_finger_tip = landmarks[8]
+                norm_x = index_finger_tip[0] / w
+                norm_y = index_finger_tip[1] / h
+                
+                # 绘制手部骨骼
+                for connection in self.hand_connections:
+                    start = landmarks[connection[0]]
+                    end = landmarks[connection[1]]
+                    cv2.line(processed_frame, (start[0], start[1]), (end[0], end[1]), (0, 255, 0), 2)
+                
+                # 绘制关键点
+                for i, landmark in enumerate(landmarks):
+                    color = (0, 0, 255) if i == 8 else (255, 0, 0)
+                    cv2.circle(processed_frame, (landmark[0], landmark[1]), 5, color, -1)
+                    cv2.putText(processed_frame, str(i), (landmark[0] + 10, landmark[1]), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                
+                # 归一化所有关键点
+                norm_landmarks = []
+                for landmark in landmarks:
+                    norm_landmarks.append((landmark[0]/w, landmark[1]/h, landmark[2]))
+                
+                return HandState(
+                    index_finger_tip=(norm_x, norm_y),
+                    is_detected=True,
+                    all_landmarks=norm_landmarks
+                ), processed_frame
+        
+        # 未检测到手
+        return HandState(
+            index_finger_tip=(0, 0),
+            is_detected=False,
+            all_landmarks=[]
+        ), processed_frame
+    
+    def _process_with_simplified(self, frame: np.ndarray, processed_frame: np.ndarray, h: int, w: int) -> tuple[HandState, np.ndarray]:
+        """使用简化的方法进行手部检测"""
         # 转换为 HSV 颜色空间
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         
@@ -92,9 +173,6 @@ class HandTracker:
                     is_detected=False,
                     all_landmarks=[]
                 ), processed_frame
-            
-            # 找到轮廓的凸包
-            hull = cv2.convexHull(max_contour)
             
             # 计算轮廓的边界框
             x, y, w_contour, h_contour = cv2.boundingRect(max_contour)

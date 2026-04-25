@@ -71,9 +71,14 @@ def main():
         # 映射坐标
         if hand_state.is_detected:
             norm_x, norm_y = hand_state.index_finger_tip
-            # 摄像头画面已经在 camera.py 中进行了镜像处理，无需再次翻转
+            # 注意：由于摄像头画面在 camera.py 中进行了镜像处理，
+            # 但手势检测是基于镜像后的帧进行的，所以这里不需要再次翻转
+            # 直接使用 norm_x 和 norm_y 进行映射
             canvas_x = int(norm_x * renderer.width)
             canvas_y = int(norm_y * renderer.height)
+            # 确保坐标在画布范围内
+            canvas_x = max(0, min(canvas_x, renderer.width - 1))
+            canvas_y = max(0, min(canvas_y, renderer.height - 1))
             finger_pos = (canvas_x, canvas_y)
         else:
             finger_pos = (0, 0)
